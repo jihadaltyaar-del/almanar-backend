@@ -1,0 +1,6 @@
+node_modules/
+.env
+*.bak
+backup_*.json
+.last_maps_test_order.txt
+maps_test_out.txt

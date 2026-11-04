@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1600px; height: 700px; overflow: hidden; }
+  body {
+    background: #ffffff;
+    font-family: 'Segoe UI', 'Tahoma', sans-serif;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    padding-top: 40px;
+  }
+  .icon { width: 340px; height: 340px; flex-shrink: 0; }
+  .texts { display: flex; flex-direction: column; align-items: center; }
+  .title {
+    font-size: 175px;
+    font-weight: 900;
+    color: #2f9e44;
+    letter-spacing: -2px;
+    line-height: 1.05;
+    font-family: 'Segoe UI', 'Tahoma', sans-serif;
+  }
+  .title .iconfont { color: #7bc043; }
+  .tagline {
+    font-size: 74px;
+    font-weight: 600;
+    color: #111111;
+    margin-top: 18px;
+    letter-spacing: 2px;
+    font-family: 'Segoe UI', 'Tahoma', sans-serif;
+  }
+  .topbar { position: absolute; top: 0; left: 0; right: 0; height: 16px; background: #2774c4; }
+  .bottomline { position: absolute; bottom: 0; left: 0; right: 0; height: 14px; background: #62d9a6; }
+</style>
+</head>
+<body>
+  <div class="topbar"></div>
+  <div class="bottomline"></div>
+
+  <!-- أيقونة السلة الخضراء مع أوراق -->
+  <svg class="icon" viewBox="0 0 200 200">
+    <!-- سعف/أوراق -->
+    <g fill="#7bc043">
+      <ellipse cx="118" cy="42" rx="16" ry="34" transform="rotate(30 118 42)"/>
+      <ellipse cx="86" cy="36" rx="14" ry="30" transform="rotate(-25 86 36)"/>
+      <circle cx="63" cy="58" r="15"/>
+    </g>
+    <!-- جسم السلة -->
+    <path d="M25 88 Q25 74 41 74 L159 74 Q175 74 175 88 L158 176 Q155 194 137 194 L63 194 Q45 194 42 176 Z" fill="#7bc043"/>
+    <!-- المقبض -->
+    <path d="M60 76 Q60 34 100 34 Q140 34 140 76" fill="none" stroke="#7bc043" stroke-width="17" stroke-linecap="round"/>
+    <!-- الموجة البيضاء -->
+    <path d="M47 150 Q72 118 100 146 Q128 174 153 138 L158 176 Q155 194 137 194 L63 194 Q45 194 42 176 Z" fill="#ffffff"/>
+    <path d="M64 168 Q82 146 100 166 Q118 186 136 162" fill="none" stroke="#7bc043" stroke-width="10" stroke-linecap="round"/>
+  </svg>
+
+  <div class="texts">
+    <div class="title">سلة المنار</div>
+    <div class="tagline">التوفير بالخضار</div>
+  </div>
+</body>
+</html>
