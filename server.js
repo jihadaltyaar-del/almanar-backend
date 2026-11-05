@@ -2746,7 +2746,7 @@ const server = http.createServer(async (req, res) => {
     // -------------------------------------------------------------
     // واجهة الويب التفاعلية الكاملة للوحة التحكم (لوحة الإدارة)
     // -------------------------------------------------------------
-    if (pathname === '/' || pathname === '/index.html' || pathname === '') {
+    if (pathname === '/' || pathname === '/index.html' || pathname === '' || pathname === '/admin' || pathname === '/admin/' || pathname === '/dashboard') {
       const db = getDb();
       initTenants(db);
       const tenantId = getTenantId(req, url);
