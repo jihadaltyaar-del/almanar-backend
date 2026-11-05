@@ -2,7 +2,15 @@ import { getDrivers, upsertDriver, deleteDriver, getProducts, upsertProduct, del
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+
+// دالة تشفير وحماية رموز PIN وكلمات المرور في الباك اند
+const hashCustomerPin = (pin) => crypto.createHash('sha256').update(String(pin || '') + '_almanar_secure_salt').digest('hex');
+const verifyCustomerPin = (entered, stored) => {
+  if (!entered || !stored) return false;
+  return stored === entered || stored === hashCustomerPin(entered);
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -793,58 +801,78 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ success: true, subscription: td.subscription }));
       }
 
-      // 0.2 تسجيل دخول العميل بالجوال + رمز PIN (معزول داخل منشأته)
+      // 0.2 تسجيل حساب عميل جديد بالجوال + رمز PIN/كلمة مرور مشفرة ومحمية
       if (pathname === '/api/customer/register' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
         const phone = String(body.phone || '').trim();
         const custName = String(body.name || '').trim();
-        const custPin = String(body.pin || '').trim();
-        if (!phone || !custName || !/^\d{4}$/.test(custPin)) {
+        const custPin = String(body.pin || body.password || '').trim();
+        if (!phone || !custName || custPin.length < 4) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام مطلوبة' }));
+          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام أو أكثر مطلوبة' }));
         }
         if (td.customerAccounts.some(a => a.phone === phone)) {
           res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال مسجل مسبقاً — سجّل الدخول' }));
+          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال مسجل مسبقاً — سجّل الدخول مباشرة' }));
         }
         const acc = {
           id: 'custacc-' + Date.now(),
           name: custName,
           phone,
-          pin: custPin,
-          address: String(body.address || '').trim(),
+          pin: hashCustomerPin(custPin), // تشفير الرمز لحماية بيانات العميل في الباك اند
+          address: String(body.address || 'الرياض').trim(),
           createdAt: new Date().toISOString()
         };
         td.customerAccounts.push(acc);
         // ملف العميل في قسم العملاء أيضاً
+        const customerProfile = {
+          id: acc.id,
+          tenant_id: tenantId,
+          name: custName,
+          phone,
+          address: acc.address,
+          city: String(body.city || 'الرياض').trim(),
+          orders_count: 0,
+          total_spent: 0,
+          created_at: acc.createdAt,
+          updated_at: acc.createdAt
+        };
         td.customers.unshift({
           id: acc.id,
           name: custName,
           phone,
           address: acc.address,
-          city: String(body.city || 'الرياض').trim(),
+          city: customerProfile.city,
           ordersCount: 0,
           totalSpent: 0,
           createdAt: acc.createdAt
         });
         saveDb(db);
+
+        // حفظ سجل العميل فوراً في قاعدة بيانات Supabase السحابية
+        try {
+          await upsertCustomer(customerProfile);
+        } catch (sbErr) {
+          console.warn('[Supabase] تحذير حفظ العميل:', sbErr.message);
+        }
+
         res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone }, tenantId }));
+        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, address: acc.address }, tenantId }));
       }
 
       if (pathname === '/api/customer/login' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
         const phone = String(body.phone || '').trim();
-        const pin = String(body.pin || '').trim();
-        const acc = td.customerAccounts.find(a => a.phone === phone && a.pin === pin);
+        const pin = String(body.pin || body.password || '').trim();
+        const acc = td.customerAccounts.find(a => a.phone === phone && verifyCustomerPin(pin, a.pin));
         if (acc) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, address: acc.address || '' }, tenantId }));
         }
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: td.customerAccounts.some(a => a.phone === phone) ? 'رمز PIN غير صحيح' : 'لا يوجد حساب بهذا الرقم في هذه المنشأة' }));
+        return res.end(JSON.stringify({ success: false, error: td.customerAccounts.some(a => a.phone === phone) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'لا يوجد حساب بهذا الرقم — يرجى إنشاء حساب جديد' }));
       }
 
 
@@ -1160,6 +1188,46 @@ const server = http.createServer(async (req, res) => {
             await decrementStockForOrder(tenantId, newOrder.items);
           } catch (e) {
             console.error('[Supabase] خطأ حفظ الطلب:', e.message);
+          }
+
+          // مزامنة سجل العميل فوراً في Supabase
+          try {
+            const custPhone = newOrder.phone;
+            const existingCust = (td.customers || []).find(c => c.phone === custPhone);
+            const customerId = existingCust ? existingCust.id : ('cust-' + Date.now());
+            const updatedSpent = (existingCust ? (existingCust.totalSpent || 0) : 0) + newOrder.total;
+            const updatedCount = (existingCust ? (existingCust.ordersCount || 0) : 0) + 1;
+            
+            if (existingCust) {
+              existingCust.totalSpent = updatedSpent;
+              existingCust.ordersCount = updatedCount;
+              if (newOrder.address) existingCust.address = newOrder.address;
+            } else {
+              td.customers.unshift({
+                id: customerId,
+                name: newOrder.customerName,
+                phone: custPhone,
+                address: newOrder.address,
+                city: newOrder.city || 'الرياض',
+                ordersCount: 1,
+                totalSpent: newOrder.total,
+                createdAt: new Date().toISOString()
+              });
+            }
+
+            await upsertCustomer({
+              id: customerId,
+              tenant_id: tenantId,
+              name: newOrder.customerName,
+              phone: custPhone,
+              address: newOrder.address,
+              city: newOrder.city || 'الرياض',
+              orders_count: updatedCount,
+              total_spent: updatedSpent,
+              updated_at: new Date().toISOString()
+            });
+          } catch (custErr) {
+            console.warn('[Supabase] تحذير مزامنة العميل:', custErr.message);
           }
 
           // تحديث المخزون المحلي بأمان
@@ -2703,6 +2771,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (pathname === '/admin_additions.js') {
+      const jsPath = path.resolve(__dirname, 'public', 'admin_additions.js');
+      if (fs.existsSync(jsPath) && fs.statSync(jsPath).isFile()) {
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'X-Content-Type-Options': 'nosniff'
+        });
+        return res.end(fs.readFileSync(jsPath, 'utf8'));
+      }
+    }
+
     // -------------------------------------------------------------
     // تقديم الصور الحقيقية والمرفوعة مع حماية تامة ضد Path Traversal
     // -------------------------------------------------------------
@@ -2970,8 +3049,8 @@ function renderFullAdminHtml(tenantId, db) {
 
     <!-- الفوتر السفلي -->
     <div class="p-3 space-y-0.5 text-xs font-semibold" style="border-top:1px solid rgba(255,255,255,0.1);">
-      <a href="#" class="flex items-center gap-2 px-3 py-1.5 rounded-lg sidebar-nav-btn">⚙ الإعدادات العامة</a>
-      <a href="#" class="flex items-center gap-2 px-3 py-1.5 rounded-lg sidebar-nav-btn">❓ المساعدة والدعم</a>
+      <a href="javascript:void(0)" onclick="showSettings()" id="nav-settings" class="flex items-center gap-2 px-3 py-1.5 rounded-lg sidebar-nav-btn">⚙ الإعدادات العامة</a>
+      <a href="javascript:void(0)" onclick="showHelp()" id="nav-help" class="flex items-center gap-2 px-3 py-1.5 rounded-lg sidebar-nav-btn">❓ المساعدة والدعم</a>
       <a href="#" id="logout-link" class="flex items-center gap-2 px-3 py-1.5 rounded-lg" style="color:#f87171;" onmouseover="this.style.background='rgba(248,113,113,0.1)'" onmouseout="this.style.background='transparent'">🚪 تسجيل الخروج</a>
     </div>
   </aside>
@@ -3006,12 +3085,12 @@ function renderFullAdminHtml(tenantId, db) {
           </button>
         </div>
         <div class="hidden sm:flex items-center gap-1 mr-4 border-r pr-4 border-slate-200">
-          <button class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">📅</button>
+          <button id="btn-date" onclick="showDatePicker()" title="التقويم والتاريخ" class="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition">📅</button>
           <div class="relative">
-            <button class="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">🔔</button>
-            <span class="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold">4</span>
+            <button id="btn-notifications" onclick="showNotifications()" title="مركز الإشعارات" class="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition">🔔</button>
+            <span class="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold shadow-sm" id="header-notif-badge">3</span>
           </div>
-          <button class="flex items-center gap-1 px-2 py-1 text-xs bg-slate-100 rounded-md text-slate-600 font-semibold mr-1">🇸🇦 عربي</button>
+          <button id="lang-toggle-btn" onclick="toggleLanguage()" title="تبديل اللغة (عربي / English)" class="flex items-center gap-1 px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold mr-1 transition">🌐 <span id="current-lang-text">🇸🇦 عربي</span></button>
         </div>
       </div>
 
@@ -3556,9 +3635,19 @@ function renderFullAdminHtml(tenantId, db) {
       <!-- 4. العملاء (Customers) -->
       <!-- ======================================================== -->
       <div id="section-customers" class="section-view space-y-6">
-        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-          <h2 class="text-lg font-bold text-slate-800">سجل العملاء والعناوين</h2>
-          <p class="text-xs text-slate-500 mt-0.5">إجمالي مشتريات العملاء والولاء</p>
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-6 bg-amber-500 rounded-full inline-block"></span>
+              <h2 class="text-lg font-black text-slate-800">سجل العملاء وبرنامج المكافآت</h2>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">إجمالي مشتريات العملاء، إدارة نقاط الولاء، ومنح كوبونات ومكافآت التميز للعملاء</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="showCustomerLoyalty()" class="px-4 py-2.5 bg-gradient-to-l from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm transition">
+              <span>🏆</span> برنامج الولاء والمكافآت
+            </button>
+          </div>
         </div>
         <div class="bg-white rounded-2xl border border-slate-200 table-scroll shadow-sm">
           <table class="w-full text-right text-xs">
@@ -3569,6 +3658,8 @@ function renderFullAdminHtml(tenantId, db) {
                 <th class="p-3.5">المدينة والحي</th>
                 <th class="p-3.5">عدد الطلبات</th>
                 <th class="p-3.5">إجمالي المشتريات</th>
+                <th class="p-3.5 text-center">مستوى الولاء</th>
+                <th class="p-3.5 text-center">مكافأة</th>
               </tr>
             </thead>
             <tbody id="customers-table-body" class="divide-y divide-slate-100"></tbody>
@@ -3734,6 +3825,9 @@ function renderFullAdminHtml(tenantId, db) {
           <div class="flex items-center gap-2">
             <button onclick="refreshDriversData()" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 transition">
               <span>🔄</span> تحديث البيانات
+            </button>
+            <button onclick="showDriverReports()" class="px-3.5 py-2 bg-gradient-to-l from-emerald-600 to-[#008955] hover:from-emerald-700 hover:to-emerald-800 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition">
+              <span>📊</span> تقارير مبيعات المناديب
             </button>
             <a href="http://localhost:8090" target="_blank" class="px-4 py-2 bg-[#142A4A] hover:bg-[#1e3a5f] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition">
               <span>🛵</span> فتح تطبيق المندوب
@@ -4306,6 +4400,7 @@ function renderFullAdminHtml(tenantId, db) {
 
   <!-- جافاسكريبت الواجهة التفاعلية المستقل والشامل -->
   <script src="/admin.js"></script>
+  <script src="/admin_additions.js"></script>
 </body>
 </html>`;
 }
