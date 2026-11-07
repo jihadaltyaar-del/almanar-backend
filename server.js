@@ -826,6 +826,7 @@ const server = http.createServer(async (req, res) => {
           pin: hashCustomerPin(custPin), // تشفير الرمز للدخول السريع
           password: hashCustomerPin(custPassword), // تشفير كلمة المرور
           address: String(body.address || 'بيشة').trim(),
+          loyaltyPoints: 0, // نقاط الولاء — تبدأ بالصفر
           createdAt: new Date().toISOString()
         };
         td.customerAccounts.push(acc);
@@ -877,7 +878,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username, address: acc.address }, tenantId }));
+        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username, address: acc.address, loyaltyPoints: 0 }, tenantId }));
       }
 
       if (pathname === '/api/customer/login' && req.method === 'POST') {
@@ -904,13 +905,50 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (acc) {
+          // إضافة نقاط الولاء في استجابة تسجيل الدخول
+          const loyaltyPoints = acc.loyaltyPoints || 0;
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username || acc.phone, address: acc.address || '' }, tenantId }));
+          return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username || acc.phone, address: acc.address || '', loyaltyPoints }, tenantId }));
         }
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ success: false, error: identifier && td.customerAccounts.some(a => a.phone === identifier || a.username === identifier) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'بيانات الدخول غير صحيحة — تأكد من الرمز أو اسم المستخدم' }));
       }
 
+      // --- نقاط الولاء: استعلام وخصم ---
+      if (pathname === '/api/customer/points' && req.method === 'GET') {
+        const identifier = String(url.searchParams.get('identifier') || url.searchParams.get('phone') || '').trim();
+        const acc = td.customerAccounts.find(a => a.phone === identifier || a.username === identifier || a.id === identifier);
+        if (!acc) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: 'العميل غير موجود' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, loyaltyPoints: acc.loyaltyPoints || 0, customerId: acc.id, name: acc.name }));
+      }
+
+      // --- نقاط الولاء: تطبيق خصم نقاط على الطلب ---
+      if (pathname === '/api/customer/redeem-points' && req.method === 'POST') {
+        const rawBody = await parseBody(req);
+        const body = sanitizeObject(rawBody);
+        const identifier = String(body.identifier || body.phone || '').trim();
+        const pointsToRedeem = parseInt(body.points || 0, 10);
+        const acc = td.customerAccounts.find(a => a.phone === identifier || a.username === identifier || a.id === identifier);
+        if (!acc) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: 'العميل غير موجود' }));
+        }
+        const availablePoints = acc.loyaltyPoints || 0;
+        if (pointsToRedeem > availablePoints) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: `نقاطك المتاحة ${availablePoints} فقط` }));
+        }
+        // كل 100 نقطة = 1 ريال خصم
+        const discountAmount = parseFloat((pointsToRedeem / 100).toFixed(2));
+        acc.loyaltyPoints = availablePoints - pointsToRedeem;
+        saveDb(db);
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, discountAmount, remainingPoints: acc.loyaltyPoints, message: `تم خصم ${pointsToRedeem} نقطة (${discountAmount} ر.س) من فاتورتك` }));
+      }
 
       // 0. تسجيل دخول المدير — حساب لكل منشأة (يُنشأ عبر التسجيل فقط، بلا افتراضيات)
       
@@ -1273,6 +1311,20 @@ const server = http.createServer(async (req, res) => {
               const p = td.products.find(x => x.id === (it.prodId || it.id) || x.name === it.name);
               if (p) p.stock = Math.max(0, (p.stock || 0) - qty);
             });
+          }
+
+          // --- منح نقاط الولاء: كل 10 ريالات = 10 نقطة (1 نقطة لكل ريال) ---
+          try {
+            const custPhone = newOrder.phone;
+            const custAcc = td.customerAccounts.find(a => a.phone === custPhone);
+            if (custAcc) {
+              const earnedPoints = Math.floor(newOrder.itemsTotal || 0); // نقطة لكل ريال من قيمة المنتجات
+              custAcc.loyaltyPoints = (custAcc.loyaltyPoints || 0) + earnedPoints;
+              newOrder.loyaltyPointsEarned = earnedPoints;
+              newOrder.customerLoyaltyTotal = custAcc.loyaltyPoints;
+            }
+          } catch (lpErr) {
+            console.warn('[Loyalty] خطأ نقاط الولاء:', lpErr.message);
           }
 
           td.orders.unshift(newOrder);
