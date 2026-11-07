@@ -1,4 +1,4 @@
-import { getDrivers, upsertDriver, deleteDriver, getProducts, upsertProduct, deleteProduct, getCategories, upsertCategory, deleteCategory, getOrders, upsertOrder, deleteOrder, decrementStockForOrder, getCustomers, upsertCustomer, deleteCustomer } from './lib/supabase.js';
+import { getDrivers, upsertDriver, deleteDriver, getProducts, upsertProduct, deleteProduct, getCategories, upsertCategory, deleteCategory, getOrders, upsertOrder, deleteOrder, decrementStockForOrder, getCustomers, upsertCustomer, deleteCustomer, supabase } from './lib/supabase.js';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -802,25 +802,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       // 0.2 تسجيل حساب عميل جديد بالجوال + رمز PIN/كلمة مرور مشفرة ومحمية
+      // 0.2 تسجيل حساب عميل جديد بالجوال/اسم المستخدم + رمز PIN/كلمة مرور مشفرة ومحمية
       if (pathname === '/api/customer/register' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
         const phone = String(body.phone || '').trim();
+        const username = String(body.username || phone).trim();
         const custName = String(body.name || '').trim();
         const custPin = String(body.pin || body.password || '').trim();
         if (!phone || !custName || custPin.length < 4) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام أو أكثر مطلوبة' }));
         }
-        if (td.customerAccounts.some(a => a.phone === phone)) {
+        if (td.customerAccounts.some(a => a.phone === phone || (username && a.username === username))) {
           res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال مسجل مسبقاً — سجّل الدخول مباشرة' }));
+          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال أو اسم المستخدم مسجل مسبقاً — سجّل الدخول مباشرة' }));
         }
         const acc = {
           id: 'custacc-' + Date.now(),
           name: custName,
           phone,
+          username,
           pin: hashCustomerPin(custPin), // تشفير الرمز لحماية بيانات العميل في الباك اند
+          password: hashCustomerPin(body.password || custPin),
           address: String(body.address || 'الرياض').trim(),
           createdAt: new Date().toISOString()
         };
@@ -864,15 +868,18 @@ const server = http.createServer(async (req, res) => {
       if (pathname === '/api/customer/login' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
-        const phone = String(body.phone || '').trim();
+        const identifier = String(body.phone || body.username || body.identifier || '').trim();
         const pin = String(body.pin || body.password || '').trim();
-        const acc = td.customerAccounts.find(a => a.phone === phone && verifyCustomerPin(pin, a.pin));
+        const acc = td.customerAccounts.find(a => 
+          (a.phone === identifier || a.username === identifier) && 
+          (verifyCustomerPin(pin, a.pin) || (a.password && verifyCustomerPin(pin, a.password)))
+        );
         if (acc) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, address: acc.address || '' }, tenantId }));
         }
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: td.customerAccounts.some(a => a.phone === phone) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'لا يوجد حساب بهذا الرقم — يرجى إنشاء حساب جديد' }));
+        return res.end(JSON.stringify({ success: false, error: td.customerAccounts.some(a => a.phone === identifier || a.username === identifier) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'لا يوجد حساب بهذا الرقم أو اسم المستخدم — يرجى إنشاء حساب جديد' }));
       }
 
 
@@ -1863,35 +1870,185 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // تسجيل حساب مندوب جديد داخل منشأته (مصدر إنشاء الحساب الوحيد — بلا رموز افتراضية)
+      // تسجيل حساب مندوب جديد داخل منشأته (مشفر ومحمي — بحالة قيد المراجعة pending)
+      // ---- Supabase Auth endpoints for drivers (production delivery app) ----
+      if (pathname === '/api/auth/driver/signup' && req.method === 'POST') {
+        try {
+          const rawBody = await parseBody(req);
+          const body = sanitizeObject(rawBody);
+          const name = String(body.name || '').trim();
+          const phone = String(body.phone || '').trim();
+          const email = String(body.email || '').trim().toLowerCase();
+          const password = String(body.password || '').trim();
+          const vehicle = String(body.vehicle || body.car || '').trim();
+          const car = String(body.car || body.vehicle || '').trim();
+          const zone = String(body.zone || '').trim();
+          const city = String(body.city || '').trim();
+          const pin = String(body.pin || '').trim();
+          if (!name || !email || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'name, email and password are required' }));
+          }
+          const { data: created, error: createError } = await supabase.auth.admin.createUser({
+            email: email,
+            password: password,
+            email_confirm: true,
+            user_metadata: { name: name, phone: phone, vehicle: vehicle, car: car, zone: zone, city: city, role: 'driver' }
+          });
+          if (createError || !created || !created.user) {
+            res.writeHead(400);
+            return res.end(JSON.stringify({ success: false, error: 'failed_to_create_auth_user: ' + (createError ? createError.message : 'unknown_error') }));
+          }
+          const { data: authSession, error: authErr } = await supabase.auth.signInWithPassword({ email: email, password: password });
+          const session = authSession && authSession.session ? { access_token: authSession.session.access_token, refresh_token: authSession.session.refresh_token, token_type: authSession.session.token_type, expires_in: authSession.session.expires_in } : null;
+          const driverId = 'drv-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+          const driverRecord = {
+            id: driverId,
+            tenant_id: tenantId,
+            authId: created.user.id,
+            name: name,
+            phone: phone,
+            email: email,
+            username: phone || email,
+            vehicle: vehicle,
+            car: car,
+            zone: zone,
+            city: city,
+            photo: String(body.photo || body.photoPath || ''),
+            status: 'pending',
+            rating: 5.0,
+            activeOrders: 0,
+            pin: pin ? hashCustomerPin(pin) : null,
+            password: pin ? hashCustomerPin(pin) : null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          if (td.drivers) td.drivers.unshift(driverRecord);
+          saveDb(db);
+          try {
+            await upsertDriver({ ...driverRecord, tenant_id: tenantId });
+          } catch (e) { console.error('[Supabase] driver auth signup sync:', e.message); }
+          const safeDriver = { ...driverRecord };
+          delete safeDriver.pin;
+          delete safeDriver.password;
+          res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: true, needsApproval: true, driver: safeDriver, session: session, tenantId: tenantId }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      }
+
+      // ---- Supabase Auth: driver login ----
+      if (pathname === '/api/auth/driver/login' && req.method === 'POST') {
+        try {
+          const rawBody = await parseBody(req);
+          const body = sanitizeObject(rawBody);
+          const email = String(body.email || '').trim().toLowerCase();
+          const phone = String(body.phone || '').trim();
+          const password = String(body.password || '').trim();
+          const identifier = email || phone;
+          if (!identifier || !password) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'email_or_phone and password are required' }));
+          }
+          const { data: authSession, error: authErr } = await supabase.auth.signInWithPassword({ email: identifier, password: password });
+          if (authErr || !authSession || !authSession.user) {
+            res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'invalid_credentials' }));
+          }
+          const authUserId = authSession.user.id;
+          const driver = (td.drivers || []).find(d => d.authId === authUserId || d.email === identifier || d.phone === identifier);
+          if (!driver) {
+            res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'driver_record_not_found' }));
+          }
+          if (driver.status === 'pending') {
+            res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'pending_approval', pendingApproval: true, driver: driver }));
+          }
+          const safeDriver = { ...driver };
+          delete safeDriver.pin;
+          delete safeDriver.password;
+          const session = authSession.session ? { access_token: authSession.session.access_token, refresh_token: authSession.session.refresh_token, token_type: authSession.session.token_type, expires_in: authSession.session.expires_in } : null;
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: true, driver: safeDriver, session: session, tenantId: tenantId }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      }
+
+      // ---- Supabase Auth: driver session restore / validate ----
+      if (pathname === '/api/auth/driver/me' && req.method === 'POST') {
+        try {
+          const rawBody = await parseBody(req);
+          const body = sanitizeObject(rawBody);
+          const token = String(body.accessToken || body.token || '').trim();
+          const refreshToken = String(body.refreshToken || '').trim();
+          let userId = null;
+          if (token) {
+            await supabase.auth.setSession({ access_token: token, refresh_token: refreshToken || '' });
+          }
+          if (token) {
+            const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+            if (!userErr && userData && userData.user) userId = userData.user.id;
+          }
+          if (!userId && refreshToken) {
+            const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
+            if (!refreshErr && refreshed && refreshed.user) userId = refreshed.user.id;
+          }
+          if (!userId) {
+            res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'session_invalid' }));
+          }
+          const driver = (td.drivers || []).find(d => d.authId === userId);
+          if (!driver) {
+            res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, error: 'driver_record_not_found' }));
+          }
+          const safeDriver = { ...driver };
+          delete safeDriver.pin;
+          delete safeDriver.password;
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: true, driver: safeDriver, tenantId: tenantId }));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: e.message }));
+        }
+      }
+
       if (pathname === '/api/driver/register' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
         const drvName = String(body.name || '').trim();
         const drvPhone = String(body.phone || '').trim();
+        const drvUsername = String(body.username || drvPhone).trim();
         const drvPin = String(body.pin || '').trim();
-        if (!drvName || !drvPhone || !/^\d{4}$/.test(drvPin)) {
+        const drvPassword = String(body.password || drvPin).trim();
+        if (!drvName || !drvPhone || (!/^\d{4}$/.test(drvPin) && drvPassword.length < 4)) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام مطلوبة' }));
+          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام أو كلمة مرور مطلوبة' }));
         }
-        if (td.drivers.some(d => d.phone === drvPhone)) {
+        if (td.drivers.some(d => d.phone === drvPhone || (drvUsername && d.username === drvUsername))) {
           res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال مسجل مسبقاً لهذه المنشأة — سجّل الدخول' }));
+          return res.end(JSON.stringify({ success: false, error: 'رقم الجوال أو اسم المستخدم مسجل مسبقاً — سجّل الدخول مباشرة' }));
         }
         const newDriver = {
           id: 'drv-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
           tenant_id: tenantId,
           name: drvName,
           phone: drvPhone,
+          username: drvUsername,
           vehicle: String(body.vehicle || body.car || 'سيارة').trim(),
           car: String(body.vehicle || body.car || 'سيارة').trim(),
           zone: String(body.zone || 'الرياض').trim(),
-          // مدينة التوصيل: يختارها المندوب عند التسجيل — تُستخدم لتوجيه الطلبات المطابقة لمدينته
           city: String(body.city || '').trim(),
           photo: String(body.photo || body.photoPath || '').trim(),
-          pin: drvPin,
+          pin: hashCustomerPin(drvPin || drvPassword),
+          password: hashCustomerPin(drvPassword),
           activeOrders: 0,
-          status: 'pending',
+          status: 'pending', // يبدأ دائماً بحالة قيد المراجعة حتى يعتمده المدير من لوحة التحكم
           rating: 5.0,
           createdAt: new Date().toISOString()
         };
@@ -1902,8 +2059,13 @@ const server = http.createServer(async (req, res) => {
         }
         td.drivers.unshift(newDriver);
         saveDb(db);
+        
+        // إعادة البيانات بدون تسريب التجزئة المشفرة
+        const safeDriver = { ...newDriver };
+        delete safeDriver.pin;
+        delete safeDriver.password;
         res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, driver: newDriver, tenantId }));
+        return res.end(JSON.stringify({ success: true, pendingApproval: true, driver: safeDriver, tenantId }));
       }
 
       // قبول طلب تسجيل مندوب جديد
@@ -1942,15 +2104,17 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ success: true }));
       }
 
-      // تسجيل دخول المندوب بالرمز مع استعادة ملفه الخاص وحمايته
+      // تسجيل دخول المندوب بالرمز أو كلمة المرور/اسم المستخدم مع تشفير تام وحماية الاعتماد
       if (pathname === '/api/driver/login' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
         const pin = String(body.pin || '').trim();
+        const password = String(body.password || '').trim();
         const driverId = String(body.driverId || '').trim();
         const phone = String(body.phone || '').trim();
+        const username = String(body.username || '').trim();
+        const identifier = phone || username || String(body.identifier || '').trim();
 
-        // البحث عن ملف المندوب — أولاً بالـ ID، ثم بالهاتف، ثم بالـ PIN كـ fallback
         let driver = null;
 
         // 1) البحث بالـ ID المحفوظ
@@ -1958,87 +2122,88 @@ const server = http.createServer(async (req, res) => {
           driver = td.drivers.find(d => d.id === driverId);
         }
 
-        // 2) البحث بالهاتف إذا لم يُعثر على الـ ID
-        if (!driver && phone) {
-          driver = td.drivers.find(d => d.phone === phone);
+        // 2) البحث برقم الجوال أو اسم المستخدم
+        if (!driver && identifier) {
+          driver = td.drivers.find(d => d.phone === identifier || d.username === identifier || d.id === identifier);
         }
 
-        // 3) Fallback: إذا كان الـ ID قديماً (تغيّر بعد إعادة تشغيل الخادم)،
-        //    ابحث عن مندوب يملك نفس الـ PIN ويتطابق اسمه مع body.name (إن أُرسل)
-        //    أو أيّ مندوب برمز مطابق (لتسهيل استعادة الوصول)
-        if (!driver && driverId && pin && /^\d{4}$/.test(pin)) {
-          const driverName = String(body.name || '').trim();
-          if (driverName) {
-            // بحث بالاسم + الرمز (أكثر أماناً)
-            driver = td.drivers.find(d =>
-              String(d.pin || '').trim() === pin &&
-              String(d.name || '').trim() === driverName
-            );
-          }
-          if (!driver) {
-            // بحث بالرمز فقط (آخر خيار — إذا كان الرمز موجوداً لمندوب واحد فقط)
-            const matched = td.drivers.filter(d => String(d.pin || '').trim() === pin);
-            if (matched.length === 1) driver = matched[0];
-          }
-          // إذا وجدنا المندوب عبر الـ fallback — نُحدّث الـ ID في الملف ليطابق ما هو محفوظ
-          // (هذا يضمن أن التطبيق سيعمل بشكل صحيح في المرات القادمة)
-        }
-
-        if (driver) {
-          // التحقق من الرمز السري
-          const driverPin = String(driver.pin || '').trim();
-          if (driverPin && pin === driverPin) {
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            return res.end(JSON.stringify({ success: true, registered: true, driver, tenantId }));
-          }
-          if (!driverPin && /^\d{4}$/.test(pin)) {
-            // ملف قديم بلا رمز: أول دخول يتيح للمندوب اختيار رمزه الخاص
-            driver.pin = pin;
-            driver.updatedAt = new Date().toISOString();
-            saveDb(db);
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            return res.end(JSON.stringify({ success: true, registered: true, firstLogin: true, driver, tenantId }));
-          }
+        if (!driver) {
           res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'رمز الدخول غير صحيح' }));
+          return res.end(JSON.stringify({ success: false, needsRegister: true, error: 'المندوب غير مسجل في هذه المنشأة — أنشئ حساباً جديداً' }));
         }
 
-        // مندوب غير مسجل في هذه المنشأة — عليه إنشاء حساب أولاً
+        // التحقق من حالة اعتماد الحساب من لوحة الإدارة
+        if (driver.status === 'pending') {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            pendingApproval: true,
+            error: 'طلب تسجيلك قيد مراجعة واعتماد الإدارة — يرجى الانتظار حتى تتم الموافقة عليه من لوحة التحكم.'
+          }));
+        }
+
+        if (driver.status === 'مرفوض') {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({
+            success: false,
+            error: 'تم رفض طلب التسجيل من قِبل الإدارة.'
+          }));
+        }
+
+        // التحقق الآمن من رمز PIN أو كلمة المرور المشفرة
+        const enteredSecret = pin || password;
+        if (!enteredSecret) {
+          res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: false, error: 'يرجى إدخال رمز PIN أو كلمة المرور' }));
+        }
+
+        const pinOk = driver.pin && verifyCustomerPin(enteredSecret, driver.pin);
+        const passOk = driver.password && verifyCustomerPin(enteredSecret, driver.password);
+
+        if (pinOk || passOk) {
+          const safeDriver = { ...driver };
+          delete safeDriver.pin;
+          delete safeDriver.password;
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ success: true, registered: true, driver: safeDriver, tenantId }));
+        }
+
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, needsRegister: true, error: 'المندوب غير مسجل في هذه المنشأة — أنشئ حساباً جديداً' }));
+        return res.end(JSON.stringify({ success: false, error: 'رمز PIN أو كلمة المرور غير صحيحة' }));
       }
 
-      // إنشاء أو تعديل الملف الشخصي للمندوب وحفظه بالباك اند
+      // إنشاء أو تعديل الملف الشخصي للمندوب وحفظه بالباك اند مشفراً
       if (pathname === '/api/driver/profile' && req.method === 'POST') {
         const rawBody = await parseBody(req);
         const body = sanitizeObject(rawBody);
 
         const driverId = body.id || ('drv-' + Date.now() + '-' + Math.floor(Math.random() * 1000));
         const existingIdx = td.drivers.findIndex(d => d.id === driverId || (body.phone && d.phone === body.phone));
-        const pinInput = String(body.pin || '').trim();
+        const pinInput = String(body.pin || body.password || '').trim();
 
         const driverData = {
           id: driverId,
+          tenant_id: tenantId,
           name: String(body.name || 'مندوب سلة المنار').trim(),
           phone: String(body.phone || '').trim(),
+          username: String(body.username || body.phone || '').trim(),
           vehicle: String(body.vehicle || body.car || 'سيارة').trim(),
           car: String(body.vehicle || body.car || 'سيارة').trim(),
           zone: String(body.zone || 'الرياض').trim(),
-          // مدينة التوصيل للمندوب (إرسال فارغ = بقاء المدينة القديمة دون تغيير)
           city: String(body.city || '').trim(),
           photo: String(body.photo || body.photoPath || '').trim(),
           activeOrders: body.activeOrders || 0,
-          status: 'متاح',
           rating: 4.9,
           updatedAt: new Date().toISOString()
         };
 
         if (existingIdx !== -1) {
           const merged = { ...td.drivers[existingIdx], ...driverData };
-          // تحديث الرمز فقط عند تزويده، وإلا يُحفظ الرمز الحالي
-          if (/^\d{4}$/.test(pinInput)) merged.pin = pinInput;
-          else merged.pin = td.drivers[existingIdx].pin;
-          // المدينة: عدم إرسالها لا يلغي المدينة المحفوظة سابقاً
+          // تشفير الرمز فقط عند تزويده، وإلا يُحفظ الرمز الحالي
+          if (pinInput.length >= 4) {
+            merged.pin = hashCustomerPin(pinInput);
+            merged.password = hashCustomerPin(body.password || pinInput);
+          }
           if (!merged.city) merged.city = td.drivers[existingIdx].city || '';
           td.drivers[existingIdx] = merged;
           saveDb(db);
@@ -2047,19 +2212,35 @@ const server = http.createServer(async (req, res) => {
           } catch (e) {
             console.error('[Supabase] خطأ تحديث ملف المندوب:', e.message);
           }
+          const safeDriver = { ...td.drivers[existingIdx] };
+          delete safeDriver.pin;
+          delete safeDriver.password;
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: true, driver: td.drivers[existingIdx] }));
+          return res.end(JSON.stringify({ success: true, driver: safeDriver }));
         }
 
-        // ملف جديد: رمز PIN مطلوب صراحةً (لا رموز افتراضية)
-        if (!/^\d{4}$/.test(pinInput)) {
+        // ملف جديد: يبدأ دائماً بحالة قيد المراجعة pending لحين موافقة الإدارة
+        if (pinInput.length < 4) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'رمز PIN من 4 أرقام مطلوب لإنشاء ملف مندوب جديد' }));
+          return res.end(JSON.stringify({ success: false, error: 'رمز PIN أو كلمة مرور من 4 خانات على الأقل مطلوبة لإنشاء ملف المندوب' }));
         }
-        driverData.pin = pinInput;
+        driverData.status = 'pending';
+        driverData.pin = hashCustomerPin(pinInput);
+        driverData.password = hashCustomerPin(body.password || pinInput);
         driverData.createdAt = new Date().toISOString();
         td.drivers.unshift(driverData);
         saveDb(db);
+        try {
+          await upsertDriver({ ...driverData, tenant_id: tenantId });
+        } catch (e) {
+          console.error('[Supabase] خطأ حفظ ملف المندوب الجديد:', e.message);
+        }
+        const safeDriver = { ...driverData };
+        delete safeDriver.pin;
+        delete safeDriver.password;
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ success: true, pendingApproval: true, driver: safeDriver }));
+      }
         try {
           await upsertDriver({ ...driverData, tenant_id: tenantId });
         } catch (e) {
@@ -2755,7 +2936,6 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ error: 'Endpoint not found' }));
-    }
 
     // -------------------------------------------------------------
     // ملف جافاسكريبت الواجهة التفاعلية المستقل (Clean Client Script)

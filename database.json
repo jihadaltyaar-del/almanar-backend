@@ -1158,12 +1158,13 @@
       "zone": "الرياض",
       "city": "الرياض - حي الملز",
       "photo": "",
-      "pin": "5566",
+      "pin": "8c7bf2b2ac1103b8da9b50d3ad8b8c25b3e753a3f65cead3a4022025da0418eb",
       "activeOrders": 0,
       "status": "متاح",
       "rating": 5,
       "createdAt": "2026-11-04T16:34:59.370Z",
-      "approvedAt": "2026-11-04T16:40:46.174Z"
+      "approvedAt": "2026-11-04T16:40:46.174Z",
+      "password": "8c7bf2b2ac1103b8da9b50d3ad8b8c25b3e753a3f65cead3a4022025da0418eb"
     },
     {
       "id": "drv-1793718137683-629",
@@ -1177,9 +1178,10 @@
       "status": "متاح",
       "rating": 4.9,
       "updatedAt": "2026-11-03T15:02:17.684Z",
-      "pin": "0000",
+      "pin": "df625810dee16319663a19eb3c2dbf38eb0cea580ac1b3e42bdeeba4ee8f7dde",
       "createdAt": "2026-11-03T15:02:17.684Z",
-      "completedOrders": 4
+      "completedOrders": 4,
+      "password": "df625810dee16319663a19eb3c2dbf38eb0cea580ac1b3e42bdeeba4ee8f7dde"
     },
     {
       "id": "drv-1793052579657-897",
@@ -1189,11 +1191,12 @@
       "car": "كامري 2024 - أ ب ج 1234",
       "zone": "شمال الرياض",
       "photo": "",
-      "pin": "7788",
+      "pin": "280c58d61a8f4fe4dc039a9f7e37e269659e6b36e6652cb9f6b03328465b3b3a",
       "activeOrders": 0,
       "status": "متاح",
       "rating": 4.9,
-      "updatedAt": "2026-10-26T22:09:39.658Z"
+      "updatedAt": "2026-10-26T22:09:39.658Z",
+      "password": "280c58d61a8f4fe4dc039a9f7e37e269659e6b36e6652cb9f6b03328465b3b3a"
     },
     {
       "id": "drv-1",
@@ -1207,8 +1210,9 @@
       "currentLat": 24.7136,
       "currentLng": 46.6753,
       "lastLocationUpdated": "2026-11-01T16:38:29.170Z",
-      "pin": "1234",
-      "updatedAt": "2026-11-01T23:17:55.035Z"
+      "pin": "802925fa0197eec3a4d5dfd44afbdb69952d9a7c1cab871689d584a7958ad180",
+      "updatedAt": "2026-11-01T23:17:55.035Z",
+      "password": "802925fa0197eec3a4d5dfd44afbdb69952d9a7c1cab871689d584a7958ad180"
     }
   ],
   "branches": [
@@ -2585,6 +2589,27 @@
       ],
       "drivers": [
         {
+          "id": "drv-1793970315575-933",
+          "tenant_id": "almanar_main",
+          "authId": "241ffe30-3fa4-4682-af85-7793ab29a8f6",
+          "name": "test",
+          "phone": "+966500000000",
+          "email": "test@example.com",
+          "username": "+966500000000",
+          "vehicle": "car",
+          "car": "car",
+          "zone": "z",
+          "city": "c",
+          "photo": "",
+          "status": "pending",
+          "rating": 5,
+          "activeOrders": 0,
+          "pin": null,
+          "password": null,
+          "createdAt": "2026-11-06T13:05:15.575Z",
+          "updatedAt": "2026-11-06T13:05:15.575Z"
+        },
+        {
           "id": "drv-1793810099370-414",
           "tenant_id": "almanar_main",
           "name": "سالم الدوسري (كابتن جديد)",
@@ -2594,12 +2619,13 @@
           "zone": "الرياض",
           "city": "الرياض - حي الملز",
           "photo": "",
-          "pin": "5566",
+          "pin": "8c7bf2b2ac1103b8da9b50d3ad8b8c25b3e753a3f65cead3a4022025da0418eb",
           "activeOrders": 0,
           "status": "متاح",
           "rating": 5,
           "createdAt": "2026-11-04T16:34:59.370Z",
-          "approvedAt": "2026-11-04T16:40:46.174Z"
+          "approvedAt": "2026-11-04T16:40:46.174Z",
+          "password": "8c7bf2b2ac1103b8da9b50d3ad8b8c25b3e753a3f65cead3a4022025da0418eb"
         },
         {
           "id": "drv-1793718137683-629",
@@ -2613,9 +2639,10 @@
           "status": "متاح",
           "rating": 4.9,
           "updatedAt": "2026-11-03T15:02:17.684Z",
-          "pin": "0000",
+          "pin": "df625810dee16319663a19eb3c2dbf38eb0cea580ac1b3e42bdeeba4ee8f7dde",
           "createdAt": "2026-11-03T15:02:17.684Z",
-          "completedOrders": 4
+          "completedOrders": 4,
+          "password": "df625810dee16319663a19eb3c2dbf38eb0cea580ac1b3e42bdeeba4ee8f7dde"
         },
         {
           "id": "drv-1793052579657-897",
@@ -2625,11 +2652,12 @@
           "car": "كامري 2024 - أ ب ج 1234",
           "zone": "شمال الرياض",
           "photo": "",
-          "pin": "7788",
+          "pin": "280c58d61a8f4fe4dc039a9f7e37e269659e6b36e6652cb9f6b03328465b3b3a",
           "activeOrders": 0,
           "status": "متاح",
           "rating": 4.9,
-          "updatedAt": "2026-10-26T22:09:39.658Z"
+          "updatedAt": "2026-10-26T22:09:39.658Z",
+          "password": "280c58d61a8f4fe4dc039a9f7e37e269659e6b36e6652cb9f6b03328465b3b3a"
         },
         {
           "id": "drv-1",
@@ -2643,8 +2671,9 @@
           "currentLat": 24.7136,
           "currentLng": 46.6753,
           "lastLocationUpdated": "2026-11-01T16:38:29.170Z",
-          "pin": "1234",
-          "updatedAt": "2026-11-01T23:17:55.035Z"
+          "pin": "802925fa0197eec3a4d5dfd44afbdb69952d9a7c1cab871689d584a7958ad180",
+          "updatedAt": "2026-11-01T23:17:55.035Z",
+          "password": "802925fa0197eec3a4d5dfd44afbdb69952d9a7c1cab871689d584a7958ad180"
         }
       ],
       "coupons": [
