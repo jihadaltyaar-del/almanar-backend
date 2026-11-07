@@ -801,7 +801,6 @@ const server = http.createServer(async (req, res) => {
         return res.end(JSON.stringify({ success: true, subscription: td.subscription }));
       }
 
-      // 0.2 تسجيل حساب عميل جديد بالجوال + رمز PIN/كلمة مرور مشفرة ومحمية
       // 0.2 تسجيل حساب عميل جديد بالجوال/اسم المستخدم + رمز PIN/كلمة مرور مشفرة ومحمية
       if (pathname === '/api/customer/register' && req.method === 'POST') {
         const rawBody = await parseBody(req);
@@ -809,10 +808,11 @@ const server = http.createServer(async (req, res) => {
         const phone = String(body.phone || '').trim();
         const username = String(body.username || phone).trim();
         const custName = String(body.name || '').trim();
+        const custPassword = String(body.password || body.pin || '').trim();
         const custPin = String(body.pin || body.password || '').trim();
-        if (!phone || !custName || custPin.length < 4) {
+        if (!phone || !custName || (custPin.length < 4 && custPassword.length < 4)) {
           res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال ورمز PIN من 4 أرقام أو أكثر مطلوبة' }));
+          return res.end(JSON.stringify({ success: false, error: 'الاسم ورقم الجوال وكلمة المرور أو رمز PIN من 4 أرقام مطلوبة' }));
         }
         if (td.customerAccounts.some(a => a.phone === phone || (username && a.username === username))) {
           res.writeHead(409, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -823,12 +823,27 @@ const server = http.createServer(async (req, res) => {
           name: custName,
           phone,
           username,
-          pin: hashCustomerPin(custPin), // تشفير الرمز لحماية بيانات العميل في الباك اند
-          password: hashCustomerPin(body.password || custPin),
-          address: String(body.address || 'الرياض').trim(),
+          pin: hashCustomerPin(custPin), // تشفير الرمز للدخول السريع
+          password: hashCustomerPin(custPassword), // تشفير كلمة المرور
+          address: String(body.address || 'بيشة').trim(),
           createdAt: new Date().toISOString()
         };
         td.customerAccounts.push(acc);
+        // إضافة إشعار للإدارة بالعميل الجديد
+        if (!td.notifications) td.notifications = [];
+        td.notifications.unshift({
+          id: 'notif-cust-' + Date.now(),
+          type: 'customer_registration',
+          title: '👤 تسجيل عميل جديد',
+          body: `سجّل العميل الجديد "${custName}" (${phone}) في النظام`,
+          customerId: acc.id,
+          customerName: custName,
+          customerPhone: phone,
+          isRead: false,
+          createdAt: new Date().toISOString()
+        });
+        if (td.notifications.length > 200) td.notifications = td.notifications.slice(0, 200);
+
         // ملف العميل في قسم العملاء أيضاً
         const customerProfile = {
           id: acc.id,
@@ -836,7 +851,7 @@ const server = http.createServer(async (req, res) => {
           name: custName,
           phone,
           address: acc.address,
-          city: String(body.city || 'الرياض').trim(),
+          city: String(body.city || 'بيشة').trim(),
           orders_count: 0,
           total_spent: 0,
           created_at: acc.createdAt,
@@ -862,7 +877,7 @@ const server = http.createServer(async (req, res) => {
         }
 
         res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, address: acc.address }, tenantId }));
+        return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username, address: acc.address }, tenantId }));
       }
 
       if (pathname === '/api/customer/login' && req.method === 'POST') {
@@ -870,16 +885,30 @@ const server = http.createServer(async (req, res) => {
         const body = sanitizeObject(rawBody);
         const identifier = String(body.phone || body.username || body.identifier || '').trim();
         const pin = String(body.pin || body.password || '').trim();
-        const acc = td.customerAccounts.find(a => 
-          (a.phone === identifier || a.username === identifier) && 
-          (verifyCustomerPin(pin, a.pin) || (a.password && verifyCustomerPin(pin, a.password)))
-        );
+        
+        let acc = null;
+        if (identifier) {
+          acc = td.customerAccounts.find(a => 
+            (a.phone === identifier || a.username === identifier || a.id === identifier) && 
+            (verifyCustomerPin(pin, a.pin) || (a.password && verifyCustomerPin(pin, a.password)))
+          );
+        } else if (pin) {
+          // الدخول السريع برمز 4 أرقام
+          const matching = td.customerAccounts.filter(a => verifyCustomerPin(pin, a.pin));
+          if (matching.length === 1) {
+            acc = matching[0];
+          } else if (matching.length > 1) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, requireIdentifier: true, error: 'يرجى إدخال اسم المستخدم أو رقم الجوال مع الرمز' }));
+          }
+        }
+
         if (acc) {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, address: acc.address || '' }, tenantId }));
+          return res.end(JSON.stringify({ success: true, customer: { id: acc.id, name: acc.name, phone: acc.phone, username: acc.username || acc.phone, address: acc.address || '' }, tenantId }));
         }
         res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: false, error: td.customerAccounts.some(a => a.phone === identifier || a.username === identifier) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'لا يوجد حساب بهذا الرقم أو اسم المستخدم — يرجى إنشاء حساب جديد' }));
+        return res.end(JSON.stringify({ success: false, error: identifier && td.customerAccounts.some(a => a.phone === identifier || a.username === identifier) ? 'رمز PIN أو كلمة المرور غير صحيحة' : 'بيانات الدخول غير صحيحة — تأكد من الرمز أو اسم المستخدم' }));
       }
 
 
@@ -2042,8 +2071,8 @@ const server = http.createServer(async (req, res) => {
           username: drvUsername,
           vehicle: String(body.vehicle || body.car || 'سيارة').trim(),
           car: String(body.vehicle || body.car || 'سيارة').trim(),
-          zone: String(body.zone || 'الرياض').trim(),
-          city: String(body.city || '').trim(),
+          zone: String(body.zone || body.city || 'بيشة').trim(),
+          city: String(body.city || body.zone || 'بيشة').trim(),
           photo: String(body.photo || body.photoPath || '').trim(),
           pin: hashCustomerPin(drvPin || drvPassword),
           password: hashCustomerPin(drvPassword),
@@ -2058,6 +2087,24 @@ const server = http.createServer(async (req, res) => {
           console.error('[Supabase] خطأ تسجيل المندوب:', e.message);
         }
         td.drivers.unshift(newDriver);
+
+        // إرسال إشعار فوري للوحة الإدارة
+        if (!td.notifications) td.notifications = [];
+        td.notifications.unshift({
+          id: 'notif-drv-' + Date.now(),
+          type: 'driver_registration',
+          title: '🚨 طلب تسجيل مندوب جديد',
+          body: `سجّل المندوب الجديد "${drvName}" (${drvPhone} - ${newDriver.city}) - بحاجة لاعتمادك لتفعيل حسابه`,
+          driverId: newDriver.id,
+          driverName: drvName,
+          driverPhone: drvPhone,
+          driverCity: newDriver.city,
+          driverVehicle: newDriver.vehicle,
+          isRead: false,
+          createdAt: new Date().toISOString()
+        });
+        if (td.notifications.length > 200) td.notifications = td.notifications.slice(0, 200);
+
         saveDb(db);
         
         // إعادة البيانات بدون تسريب التجزئة المشفرة
@@ -2127,6 +2174,17 @@ const server = http.createServer(async (req, res) => {
           driver = td.drivers.find(d => d.phone === identifier || d.username === identifier || d.id === identifier);
         }
 
+        // 3) الدخول السريع برمز الـ 4 أرقام
+        if (!driver && pin && !identifier && !driverId) {
+          const matching = td.drivers.filter(d => d.pin && verifyCustomerPin(pin, d.pin));
+          if (matching.length === 1) {
+            driver = matching[0];
+          } else if (matching.length > 1) {
+            res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+            return res.end(JSON.stringify({ success: false, requireIdentifier: true, error: 'يرجى إدخال اسم المستخدم أو رقم الجوال مع الرمز' }));
+          }
+        }
+
         if (!driver) {
           res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' });
           return res.end(JSON.stringify({ success: false, needsRegister: true, error: 'المندوب غير مسجل في هذه المنشأة — أنشئ حساباً جديداً' }));
@@ -2189,8 +2247,8 @@ const server = http.createServer(async (req, res) => {
           username: String(body.username || body.phone || '').trim(),
           vehicle: String(body.vehicle || body.car || 'سيارة').trim(),
           car: String(body.vehicle || body.car || 'سيارة').trim(),
-          zone: String(body.zone || 'الرياض').trim(),
-          city: String(body.city || '').trim(),
+          zone: String(body.zone || body.city || 'بيشة').trim(),
+          city: String(body.city || body.zone || 'بيشة').trim(),
           photo: String(body.photo || body.photoPath || '').trim(),
           activeOrders: body.activeOrders || 0,
           rating: 4.9,
@@ -2229,6 +2287,24 @@ const server = http.createServer(async (req, res) => {
         driverData.password = hashCustomerPin(body.password || pinInput);
         driverData.createdAt = new Date().toISOString();
         td.drivers.unshift(driverData);
+
+        // إرسال إشعار فوري للوحة الإدارة
+        if (!td.notifications) td.notifications = [];
+        td.notifications.unshift({
+          id: 'notif-drv-' + Date.now(),
+          type: 'driver_registration',
+          title: '🚨 طلب تسجيل مندوب جديد',
+          body: `سجّل المندوب الجديد "${driverData.name}" (${driverData.phone} - ${driverData.city}) - بحاجة لاعتمادك لتفعيل حسابه`,
+          driverId: driverData.id,
+          driverName: driverData.name,
+          driverPhone: driverData.phone,
+          driverCity: driverData.city,
+          driverVehicle: driverData.vehicle,
+          isRead: false,
+          createdAt: new Date().toISOString()
+        });
+        if (td.notifications.length > 200) td.notifications = td.notifications.slice(0, 200);
+
         saveDb(db);
         try {
           await upsertDriver({ ...driverData, tenant_id: tenantId });
@@ -2240,14 +2316,6 @@ const server = http.createServer(async (req, res) => {
         delete safeDriver.password;
         res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ success: true, pendingApproval: true, driver: safeDriver }));
-      }
-        try {
-          await upsertDriver({ ...driverData, tenant_id: tenantId });
-        } catch (e) {
-          console.error('[Supabase] خطأ حفظ ملف المندوب الجديد:', e.message);
-        }
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        return res.end(JSON.stringify({ success: true, driver: driverData }));
       }
 
       if (pathname.startsWith('/api/driver/profile/')) {
@@ -2936,6 +3004,7 @@ const server = http.createServer(async (req, res) => {
 
       res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ error: 'Endpoint not found' }));
+    }
 
     // -------------------------------------------------------------
     // ملف جافاسكريبت الواجهة التفاعلية المستقل (Clean Client Script)
@@ -3268,7 +3337,7 @@ function renderFullAdminHtml(tenantId, db) {
           <button id="btn-date" onclick="showDatePicker()" title="التقويم والتاريخ" class="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition">📅</button>
           <div class="relative">
             <button id="btn-notifications" onclick="showNotifications()" title="مركز الإشعارات" class="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-100 transition">🔔</button>
-            <span class="absolute top-0 right-0 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold shadow-sm" id="header-notif-badge">3</span>
+            <span class="absolute top-0 right-0 min-w-[16px] h-4 px-1 bg-rose-500 text-white rounded-full text-[9px] flex items-center justify-center font-bold shadow-sm" id="header-notif-badge">0</span>
           </div>
           <button id="lang-toggle-btn" onclick="toggleLanguage()" title="تبديل اللغة (عربي / English)" class="flex items-center gap-1 px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 font-bold mr-1 transition">🌐 <span id="current-lang-text">🇸🇦 عربي</span></button>
         </div>
@@ -3297,6 +3366,20 @@ function renderFullAdminHtml(tenantId, db) {
       <!-- ======================================================== -->
       <div id="section-dashboard" class="section-view active space-y-6">
         
+        <!-- بانر التنبيه بطلبات الكباتن الجدد المعلقة -->
+        <div id="dashboard-pending-alert" class="hidden bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-4 rounded-2xl shadow-md flex items-center justify-between gap-4 border border-amber-300">
+          <div class="flex items-center gap-3">
+            <span class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">🛵</span>
+            <div>
+              <div class="font-black text-sm">يوجد طلبات انضمام كباتن جدد بانتظار الاعتماد!</div>
+              <div class="text-xs text-amber-100" id="dashboard-pending-msg">يرجى مراجعة واعتماد الحسابات لتمكينهم من استلام طلبات التوصيل</div>
+            </div>
+          </div>
+          <button onclick="if(typeof showTab==='function') showTab('drivers');" class="px-4 py-2 bg-white text-amber-900 hover:bg-amber-50 rounded-xl text-xs font-black shadow transition shrink-0">
+            مراجعة واعتماد الآن ⬅️
+          </button>
+        </div>
+
         <!-- ترويسة الترحيب والإجراءات المطابقة للصورة المرجعية -->
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>

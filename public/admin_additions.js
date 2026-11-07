@@ -167,60 +167,298 @@ function toggleLanguage() {
 window.toggleLanguage = toggleLanguage;
 
 // ----------------------------------------------------------------------------
-// 4. الإشعارات
+// 4. الإشعارات الحية ونظام اعتماد المناديب الفوري مع تنبيه صوتي وبانر تفاعلي
 // ----------------------------------------------------------------------------
-function showNotifications() {
+
+// تشغيل نغمة تنبيه صوتية باستخدام Web Audio API دون الحاجة لملفات صوت خارجية
+function playNotificationChime() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = 'sine';
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(587.33, now); // D5
+    osc.frequency.setValueAtTime(880, now + 0.12); // A5
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+    osc.start(now);
+    osc.stop(now + 0.65);
+  } catch (e) {
+    // تجاهل في حال قيود المتصفح قبل أول تفاعل
+  }
+}
+window.playNotificationChime = playNotificationChime;
+
+// إظهار بانر عائم فوري أعلى الشاشة عند وصول طلب تسجيل مندوب جديد
+function showDriverRegistrationAlert(driver) {
+  const existing = document.getElementById('live-driver-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'live-driver-toast';
+  toast.className = 'fixed top-16 left-1/2 -translate-x-1/2 z-[99999] bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center gap-4 border border-amber-300 animate-bounce max-w-lg w-[92%] sm:w-full';
+  toast.innerHTML = `
+    <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">🛵</div>
+    <div class="flex-1 min-w-0 text-right">
+      <div class="font-black text-sm flex items-center gap-1.5 justify-start">
+        <span>🚨 طلب تسجيل كابتن جديد!</span>
+      </div>
+      <div class="text-xs text-amber-100 truncate mt-0.5">${escapeHtml(driver.name || 'كابتن جديد')} (${escapeHtml(driver.phone || '')}) - ${escapeHtml(driver.city || driver.zone || 'بيشة')}</div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button onclick="approveDriver('${escapeHtml(driver.id)}'); document.getElementById('live-driver-toast')?.remove();" class="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-xs rounded-xl shadow transition">
+        قبول فوري ✓
+      </button>
+      <button onclick="document.getElementById('live-driver-toast')?.remove();" class="p-1.5 text-white/70 hover:text-white rounded-lg">✕</button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+}
+window.showDriverRegistrationAlert = showDriverRegistrationAlert;
+
+// رفض طلب تسجيل مندوب
+async function rejectDriver(driverId) {
+  if (!confirm('هل أنت متأكد من رغبتك في رفض طلب هذا المندوب؟')) return;
+  try {
+    const res = await fetch('/api/driver/reject/' + encodeURIComponent(driverId), { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      if (typeof showToast === 'function') showToast('تم رفض الطلب بنجاح', 'info');
+      syncLiveNotificationsAndDrivers();
+    } else {
+      if (typeof showToast === 'function') showToast(data.error || 'فشل رفض الطلب', 'error');
+    }
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('تعذر الاتصال بالخادم', 'error');
+  }
+}
+window.rejectDriver = rejectDriver;
+
+// فتح نافذة الإشعارات الحية والمفصلة
+async function showNotifications() {
   const existing = document.getElementById('notif-panel');
   if (existing) { existing.remove(); return; }
-  const orders = window.globalOrders || [];
-  const pending = orders.filter(o => o.status === 'pending').slice(0, 5);
-  const drivers = window.globalDrivers || [];
-  const pendingDrivers = drivers.filter(d => d.status === 'pending').slice(0, 3);
+
+  // جلب أحدث البيانات مباشرة من السيرفر
+  let notifs = [];
+  let drivers = window.globalDrivers || [];
+  let orders = window.globalOrders || [];
+  try {
+    const [resN, resD] = await Promise.all([
+      fetch('/api/notifications').then(r => r.json()).catch(() => []),
+      fetch('/api/drivers').then(r => r.json()).catch(() => [])
+    ]);
+    if (Array.isArray(resN)) notifs = resN;
+    if (Array.isArray(resD)) { drivers = resD; window.globalDrivers = resD; }
+  } catch (_) {}
+
+  const pendingDrivers = drivers.filter(d => d.status === 'pending');
+  const pendingOrders = orders.filter(o => o.status === 'pending').slice(0, 5);
 
   const panel = document.createElement('div');
   panel.id = 'notif-panel';
-  panel.className = 'fixed top-14 left-4 z-[9998] bg-white rounded-2xl shadow-2xl border border-slate-200 w-80 max-h-96 overflow-y-auto';
+  panel.className = 'fixed top-14 left-4 z-[9998] bg-white rounded-2xl shadow-2xl border border-slate-200 w-96 max-h-[85vh] overflow-y-auto custom-scroll text-right';
   panel.innerHTML = `
-    <div class="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between">
-      <span class="font-bold text-sm text-slate-800">🔔 الإشعارات</span>
+    <div class="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between z-10">
+      <div class="flex items-center gap-2">
+        <span class="font-extrabold text-sm text-slate-800">🔔 مركز الإشعارات واعتماد الطلبات</span>
+        ${(pendingDrivers.length > 0 || notifs.length > 0) ? `<span class="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">${pendingDrivers.length + notifs.filter(n=>!n.isRead).length}</span>` : ''}
+      </div>
       <button onclick="document.getElementById('notif-panel')?.remove()" class="text-slate-400 hover:text-slate-700 text-lg">✕</button>
     </div>
-    <div class="p-3 space-y-2">
+    <div class="p-3 space-y-3">
+      <!-- 1) طلبات تسجيل المناديب المعلقة التي تحتاج موافقة -->
       ${pendingDrivers.length > 0 ? `
-        <div class="text-[11px] font-bold text-amber-600 px-1 mt-1">🧑‍💼 مناديب ينتظرون القبول</div>
-        ${pendingDrivers.map(d => `
-          <div class="bg-amber-50 rounded-xl px-3 py-2.5 flex items-center justify-between border border-amber-100">
-            <div>
-              <div class="text-xs font-bold text-slate-800">${escapeHtml(d.name || 'مندوب جديد')}</div>
-              <div class="text-[11px] text-slate-500">${escapeHtml(d.phone || '')}</div>
-            </div>
-            <button onclick="approveDriver('${escapeHtml(d.id)}');document.getElementById('notif-panel')?.remove()" class="text-[11px] bg-amber-500 text-white px-2.5 py-1 rounded-lg font-bold hover:bg-amber-600 transition">قبول ✓</button>
+        <div>
+          <div class="text-xs font-black text-amber-700 px-1 mb-2 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+            طلبات انضمام كباتن بانتظار الاعتماد (${pendingDrivers.length})
           </div>
-        `).join('')}
-      ` : ''}
-      ${pending.length > 0 ? `
-        <div class="text-[11px] font-bold text-blue-600 px-1 mt-2">📦 طلبات جديدة</div>
-        ${pending.map(o => `
-          <div class="bg-blue-50 rounded-xl px-3 py-2.5 border border-blue-100">
-            <div class="text-xs font-bold text-slate-800">${escapeHtml(o.customerName || 'عميل')}</div>
-            <div class="text-[11px] text-slate-500">${parseFloat(o.totalPrice || 0).toFixed(2)} ر.س</div>
+          <div class="space-y-2">
+            ${pendingDrivers.map(d => {
+              const safePhone = escapeHtml(d.phone || '');
+              const phone966 = (d.phone || '').replace(/^0/, '966');
+              const waLink = `https://wa.me/${phone966}`;
+              return `
+                <div class="bg-amber-50/80 rounded-xl p-3 border border-amber-200/80 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <div class="w-8 h-8 rounded-lg bg-amber-200 text-amber-900 flex items-center justify-center font-bold text-sm">🛵</div>
+                      <div>
+                        <div class="font-bold text-xs text-slate-900">${escapeHtml(d.name || 'كابتن جديد')}</div>
+                        <div class="text-[11px] text-slate-500 font-mono">📱 ${safePhone} | 📍 ${escapeHtml(d.city || d.zone || 'بيشة')}</div>
+                      </div>
+                    </div>
+                    <span class="text-[10px] bg-amber-200/80 text-amber-900 font-bold px-2 py-0.5 rounded-md">معلق</span>
+                  </div>
+                  <div class="flex items-center gap-2 pt-1 border-t border-amber-200/50">
+                    <button onclick="approveDriver('${escapeHtml(d.id)}'); document.getElementById('notif-panel')?.remove();" class="flex-1 py-1.5 bg-[#008955] hover:bg-emerald-700 text-white rounded-lg text-[11px] font-black transition text-center shadow-sm">
+                      قبول واعتماد ✓
+                    </button>
+                    <button onclick="rejectDriver('${escapeHtml(d.id)}'); document.getElementById('notif-panel')?.remove();" class="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition">
+                      رفض ✕
+                    </button>
+                    <a href="${waLink}" target="_blank" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1">
+                      💬 واتساب
+                    </a>
+                  </div>
+                </div>
+              `;
+            }).join('')}
           </div>
-        `).join('')}
+        </div>
       ` : ''}
-      ${pendingDrivers.length === 0 && pending.length === 0 ? `
-        <div class="text-center py-6 text-slate-400 text-sm">
+
+      <!-- 2) الإشعارات المسجلة في النظام -->
+      ${notifs.length > 0 ? `
+        <div>
+          <div class="text-xs font-black text-slate-600 px-1 mb-2">سجل الإشعارات الحديثة</div>
+          <div class="space-y-1.5">
+            ${notifs.slice(0, 10).map(n => `
+              <div class="bg-slate-50 hover:bg-slate-100 rounded-xl p-2.5 border border-slate-200 transition">
+                <div class="font-bold text-xs text-slate-800">${escapeHtml(n.title || 'إشعار')}</div>
+                <div class="text-[11px] text-slate-600 mt-0.5">${escapeHtml(n.body || '')}</div>
+                <div class="text-[10px] text-slate-400 font-mono mt-1">${n.createdAt ? new Date(n.createdAt).toLocaleTimeString('ar-SA') : ''}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <!-- 3) الطلبات الجديدة المعلقة -->
+      ${pendingOrders.length > 0 ? `
+        <div>
+          <div class="text-xs font-black text-blue-700 px-1 mb-2">📦 طلبات شراء جديدة (${pendingOrders.length})</div>
+          <div class="space-y-1.5">
+            ${pendingOrders.map(o => `
+              <div class="bg-blue-50/70 rounded-xl p-2.5 border border-blue-100 flex items-center justify-between">
+                <div>
+                  <div class="text-xs font-bold text-slate-800">طلب #${escapeHtml(o.id || '')} — ${escapeHtml(o.customerName || 'عميل')}</div>
+                  <div class="text-[11px] text-blue-700 font-black">${parseFloat(o.totalPrice || o.total || 0).toFixed(2)} ر.س</div>
+                </div>
+                <button onclick="if(typeof showTab==='function') showTab('orders'); document.getElementById('notif-panel')?.remove();" class="text-[10px] bg-blue-600 text-white px-2 py-1 rounded-md font-bold hover:bg-blue-700 transition">عرض الطلب</button>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${pendingDrivers.length === 0 && notifs.length === 0 && pendingOrders.length === 0 ? `
+        <div class="text-center py-8 text-slate-400 text-xs font-medium">
           <div class="text-3xl mb-2">✅</div>
-          لا توجد إشعارات جديدة
+          لا توجد طلبات معلقة أو إشعارات جديدة حالياً
         </div>
       ` : ''}
     </div>
   `;
   document.body.appendChild(panel);
   setTimeout(() => document.addEventListener('click', function handler(e) {
-    if (!panel.contains(e.target)) { panel.remove(); document.removeEventListener('click', handler); }
+    if (!panel.contains(e.target) && !e.target.closest('#btn-notifications') && !e.target.closest('#btn-notif')) {
+      panel.remove();
+      document.removeEventListener('click', handler);
+    }
   }), 100);
 }
 window.showNotifications = showNotifications;
+
+// ----------------------------------------------------------------------------
+// حلقة الاستطلاع الحية في الخلفية (Live Background Polling Loop)
+// ----------------------------------------------------------------------------
+let _lastPendingDriverIds = new Set();
+let _isFirstPoll = true;
+
+async function syncLiveNotificationsAndDrivers() {
+  try {
+    const [resDrivers, resNotifs] = await Promise.all([
+      fetch('/api/drivers').then(r => r.json()).catch(() => []),
+      fetch('/api/notifications').then(r => r.json()).catch(() => [])
+    ]);
+
+    if (Array.isArray(resDrivers)) {
+      window.globalDrivers = resDrivers;
+      const pendingDrivers = resDrivers.filter(d => d.status === 'pending');
+      const unreadNotifs = Array.isArray(resNotifs) ? resNotifs.filter(n => !n.isRead) : [];
+      const totalBadge = pendingDrivers.length + unreadNotifs.length;
+
+      // تحديث شارة الإشعارات في الهيدر
+      const badge = document.getElementById('header-notif-badge');
+      if (badge) {
+        badge.innerText = totalBadge;
+        if (totalBadge > 0) {
+          badge.className = 'absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white rounded-full text-[10px] flex items-center justify-center font-black shadow-lg animate-pulse';
+        } else {
+          badge.className = 'absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-slate-400 text-white rounded-full text-[10px] flex items-center justify-center font-bold opacity-60';
+        }
+      }
+
+      // التحقق من وصول كابتن جديد لم يكن موجوداً في الاستطلاع السابق
+      const currentPendingIds = new Set(pendingDrivers.map(d => d.id));
+      let hasNewArrival = false;
+      let newDriver = null;
+
+      if (!_isFirstPoll) {
+        for (const drv of pendingDrivers) {
+          if (!_lastPendingDriverIds.has(drv.id)) {
+            hasNewArrival = true;
+            newDriver = drv;
+            break;
+          }
+        }
+      }
+
+      _lastPendingDriverIds = currentPendingIds;
+      _isFirstPoll = false;
+
+      if (hasNewArrival && newDriver) {
+        playNotificationChime();
+        showDriverRegistrationAlert(newDriver);
+      }
+
+      // تحديث بانر التنبيه بالرئيسية
+      const dashAlert = document.getElementById('dashboard-pending-alert');
+      const dashMsg = document.getElementById('dashboard-pending-msg');
+      if (dashAlert) {
+        if (pendingDrivers.length > 0) {
+          dashAlert.classList.remove('hidden');
+          if (dashMsg) dashMsg.innerText = `يوجد ${pendingDrivers.length} كابتن جديد بانتظار موافقتك لتفعيل حساباتهم`;
+        } else {
+          dashAlert.classList.add('hidden');
+        }
+      }
+
+      // تحديث عدادات المناديب في الواجهة وقسم المناديب
+      const elPending = document.getElementById('stat-driver-pending');
+      if (elPending) elPending.innerText = pendingDrivers.length;
+
+      const elPendingBar = document.getElementById('stat-driver-pending-bar');
+      if (elPendingBar) elPendingBar.style.width = pendingDrivers.length > 0 ? '100%' : '0%';
+
+      const pendingBadge = document.getElementById('pending-badge-count');
+      if (pendingBadge) pendingBadge.innerText = `${pendingDrivers.length} طلبات انضمام`;
+
+      const pendingWrapper = document.getElementById('pending-drivers-wrapper');
+      if (pendingWrapper) {
+        if (pendingDrivers.length > 0) {
+          pendingWrapper.classList.remove('hidden');
+          const pendingList = document.getElementById('pending-drivers-list');
+          if (pendingList && typeof renderPendingDriversHtml === 'function') {
+            pendingList.innerHTML = renderPendingDriversHtml(pendingDrivers);
+          }
+        } else {
+          pendingWrapper.classList.add('hidden');
+        }
+      }
+    }
+  } catch (err) {
+    // خطأ شبكة مؤقت
+  }
+}
+window.syncLiveNotificationsAndDrivers = syncLiveNotificationsAndDrivers;
 
 // ----------------------------------------------------------------------------
 // 5. التاريخ والتقويم
@@ -798,4 +1036,10 @@ document.addEventListener('DOMContentLoaded', () => {
   window.showDatePicker = showDatePicker;
   window.showDriverReports = showDriverReports;
   window.showCustomerLoyalty = showCustomerLoyalty;
+
+  // تشغيل حلقة الاستطلاع الحية فوراً وكل 4 ثوانٍ
+  setTimeout(() => {
+    syncLiveNotificationsAndDrivers();
+    setInterval(syncLiveNotificationsAndDrivers, 4000);
+  }, 1000);
 });
