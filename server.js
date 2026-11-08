@@ -2632,18 +2632,48 @@ const server = http.createServer(async (req, res) => {
             createdAt: new Date().toISOString()
           };
 
-          // تحديث متوسط تقييم المندوب
-          if (newReview.driverId && driverRating !== null) {
-            const drv = (td.drivers || []).find(d => d.id === newReview.driverId);
-            if (drv) {
-              const prev = drv.ratingsCount || drv.ratings_count || 0;
-              const prevAvg = parseFloat(drv.rating || drv.average_rating || 5.0);
-              const newCount = prev + 1;
-              drv.rating = parseFloat(((prevAvg * prev + driverRating) / newCount).toFixed(2));
-              drv.ratingsCount = newCount;
-              saveDb(db);
+          // تحديث متوسط تقييم المندوب وربطه بالاسم أو المعرف
+          const driverIdentifier = newReview.driverId || String(body.driverName || body.driver_name || '').trim();
+          let drv = null;
+          if (driverIdentifier) {
+            drv = (td.drivers || []).find(d => d.id === driverIdentifier || d.name === driverIdentifier);
+            if (drv) newReview.driverId = drv.id;
+          }
+          if (drv && driverRating !== null) {
+            const prev = drv.ratingsCount || drv.ratings_count || 0;
+            const prevAvg = parseFloat(drv.rating || drv.average_rating || 5.0);
+            const newCount = prev + 1;
+            drv.rating = parseFloat(((prevAvg * prev + driverRating) / newCount).toFixed(2));
+            drv.ratingsCount = newCount;
+          }
+
+          // حفظ التقييم على الطلب في سجل الطلبات
+          if (newReview.orderId) {
+            const cleanOrderId = String(newReview.orderId).replace(/^#/, '');
+            const ord = (td.orders || []).find(o => o.id === newReview.orderId || String(o.id || '').replace(/^#/, '') === cleanOrderId);
+            if (ord) {
+              ord.rating = {
+                driverRating,
+                comment: newReview.comment,
+                driverFeedback: newReview.driverFeedback,
+                createdAt: newReview.createdAt,
+              };
             }
           }
+
+          // إضافة إشعار فوري للإدارة بتقييم المندوب
+          if (!td.notifications) td.notifications = [];
+          td.notifications.unshift({
+            id: 'notif-rev-' + Date.now(),
+            type: 'driver_review',
+            title: `⭐ تقييم جديد للمندوب (${driverRating} نجوم)`,
+            body: `قيّم العميل المندوب "${drv?.name || driverIdentifier || 'المندوب'}" بـ ${driverRating} نجوم للطلب ${newReview.orderId}: ${newReview.driverFeedback || newReview.comment || 'بدون ملاحظات'}`,
+            driverId: drv?.id,
+            driverName: drv?.name || driverIdentifier,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+          if (td.notifications.length > 200) td.notifications = td.notifications.slice(0, 200);
 
           td.reviews.unshift(newReview);
           saveDb(db);
