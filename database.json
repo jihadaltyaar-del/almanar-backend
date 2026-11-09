@@ -9555,140 +9555,7 @@
       "sourceUrl": "https://shelfpedia.com/ar-sa/product/0628451868613-one-pot-pasta-meal-creamy-garlic/"
     }
   ],
-  "orders": [
-    {
-      "id": "#34597274",
-      "customerName": "سارة خالد",
-      "phone": "0554433221",
-      "address": "الرياض - حي الياسمين",
-      "branch": "سلة المنار - فرع الروضة",
-      "date": "2026-10-27 10:12",
-      "itemsTotal": 60.49,
-      "deliveryFee": 5,
-      "distanceKm": 2.5,
-      "total": 65.49000000000001,
-      "status": "completed",
-      "driverName": "رفيق سلطان",
-      "paymentMethod": "مدى (Mada)",
-      "items": [
-        {
-          "name": "باجة قهوة تركية سادة بدون هيل 200 جرام",
-          "qty": 2,
-          "price": 14.95,
-          "image": "☕",
-          "prepared": true
-        },
-        {
-          "name": "الخير قهوة سريعة التحضير بالزعفران 12 كيس",
-          "qty": 1,
-          "price": 18,
-          "image": "☕",
-          "prepared": true
-        },
-        {
-          "name": "شاي أنور علي شاي سيلاني درجة أولى 250 جرام",
-          "qty": 1,
-          "price": 12.59,
-          "image": "🍵",
-          "prepared": true
-        }
-      ]
-    },
-    {
-      "id": "#48802353",
-      "customerName": "فهد العتيبي",
-      "phone": "0558877665",
-      "address": "حي الروضة شارع خالد بن الوليد",
-      "branch": "سلة المنار - فرع الروضة",
-      "date": "2026-10-26 22:49",
-      "itemsTotal": 71.54,
-      "deliveryFee": 10,
-      "distanceKm": 5,
-      "total": 81.54,
-      "status": "completed",
-      "driverName": "رفيق سلطان",
-      "paymentMethod": "مدى (Mada)",
-      "items": [
-        {
-          "name": "قهوة تركية 200 جرام",
-          "qty": 1,
-          "price": 14.95
-        },
-        {
-          "name": "شاي غمدان أخضر",
-          "qty": 1,
-          "price": 26
-        }
-      ]
-    },
-    {
-      "id": "#98918832",
-      "customerName": "فهد العتيبي",
-      "phone": "0558877665",
-      "address": "حي الروضة شارع خالد بن الوليد",
-      "branch": "سلة المنار - فرع الروضة",
-      "date": "2026-10-26 22:44",
-      "total": 76.54,
-      "status": "completed",
-      "driverName": "رفيق سلطان",
-      "paymentMethod": "مدى (Mada)",
-      "items": [
-        {
-          "name": "قهوة تركية 200 جرام",
-          "qty": 1,
-          "price": 14.95
-        },
-        {
-          "name": "شاي غمدان أخضر",
-          "qty": 1,
-          "price": 26
-        }
-      ]
-    },
-    {
-      "id": "20241818",
-      "customerName": "عمار محمد",
-      "phone": "0551234567",
-      "address": "الطائف - حي القيم شارع سليمان الراجحي",
-      "branch": "متاجر سلة المنار - الطائف",
-      "date": "08/02/2026",
-      "total": 33,
-      "status": "completed",
-      "driverName": "رفيق سلطان",
-      "paymentMethod": "مدى (Mada)",
-      "items": [
-        {
-          "name": "باجة قهوة تركية سادة بدون هيل 200 جرام",
-          "qty": 1,
-          "price": 14.95
-        },
-        {
-          "name": "الخير قهوة سريعة التحضير بالزعفران 12 كيس",
-          "qty": 1,
-          "price": 18
-        }
-      ]
-    },
-    {
-      "id": "#20241819",
-      "customerName": "سارة علي",
-      "phone": "0559876543",
-      "address": "الطائف - الحلقة الغربية",
-      "branch": "متاجر سلة المنار - الطائف",
-      "date": "08/02/2026",
-      "total": 48.75,
-      "status": "completed",
-      "driverName": "رفيق سلطان",
-      "paymentMethod": "Apple Pay",
-      "items": [
-        {
-          "name": "أرز بسمتي الشعلان عنبر 5 كغ",
-          "qty": 1,
-          "price": 48
-        }
-      ]
-    }
-  ],
+  "orders": [],
   "customers": [
     {
       "id": "cust-1",
@@ -9832,7 +9699,8 @@
       "phone": "0550001122",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-27T16:37:08.960Z"
+      "createdAt": "2026-10-27T16:37:08.960Z",
+      "orders": []
     },
     {
       "id": "tenant_bakery",
@@ -9843,7 +9711,8 @@
       "phone": "0550003344",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-27T16:37:08.960Z"
+      "createdAt": "2026-10-27T16:37:08.960Z",
+      "orders": []
     },
     {
       "id": "tenant_butcher",
@@ -9854,7 +9723,8 @@
       "phone": "0550005566",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-27T16:37:08.960Z"
+      "createdAt": "2026-10-27T16:37:08.960Z",
+      "orders": []
     },
     {
       "id": "tenant_1793279786589",
@@ -9865,7 +9735,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T13:16:26.589Z"
+      "createdAt": "2026-10-29T13:16:26.589Z",
+      "orders": []
     },
     {
       "id": "tenant_1793279786598",
@@ -9876,7 +9747,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T13:16:26.598Z"
+      "createdAt": "2026-10-29T13:16:26.598Z",
+      "orders": []
     },
     {
       "id": "tenant_1793283553474",
@@ -9887,7 +9759,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T14:19:13.474Z"
+      "createdAt": "2026-10-29T14:19:13.474Z",
+      "orders": []
     },
     {
       "id": "tenant_1793283553478",
@@ -9898,7 +9771,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T14:19:13.478Z"
+      "createdAt": "2026-10-29T14:19:13.478Z",
+      "orders": []
     },
     {
       "id": "tenant_1793287504004",
@@ -9909,7 +9783,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T15:25:04.004Z"
+      "createdAt": "2026-10-29T15:25:04.004Z",
+      "orders": []
     },
     {
       "id": "tenant_1793287504008",
@@ -9920,7 +9795,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T15:25:04.008Z"
+      "createdAt": "2026-10-29T15:25:04.008Z",
+      "orders": []
     },
     {
       "id": "tenant_1793287700613",
@@ -9931,7 +9807,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T15:28:20.613Z"
+      "createdAt": "2026-10-29T15:28:20.613Z",
+      "orders": []
     },
     {
       "id": "tenant_1793287700616",
@@ -9942,7 +9819,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T15:28:20.616Z"
+      "createdAt": "2026-10-29T15:28:20.616Z",
+      "orders": []
     },
     {
       "id": "tenant_1793292509868",
@@ -9953,7 +9831,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T16:48:29.868Z"
+      "createdAt": "2026-10-29T16:48:29.868Z",
+      "orders": []
     },
     {
       "id": "tenant_1793292509874",
@@ -9964,7 +9843,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-29T16:48:29.874Z"
+      "createdAt": "2026-10-29T16:48:29.874Z",
+      "orders": []
     },
     {
       "id": "tenant_1793476926025",
@@ -9975,7 +9855,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-31T20:02:06.025Z"
+      "createdAt": "2026-10-31T20:02:06.025Z",
+      "orders": []
     },
     {
       "id": "tenant_1793476926034",
@@ -9986,7 +9867,8 @@
       "phone": "",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-10-31T20:02:06.034Z"
+      "createdAt": "2026-10-31T20:02:06.034Z",
+      "orders": []
     },
     {
       "id": "tenant_1793551506293",
@@ -9997,7 +9879,8 @@
       "phone": "0551978419",
       "logo": "/images/logo.png",
       "status": "نشط",
-      "createdAt": "2026-11-01T16:45:06.293Z"
+      "createdAt": "2026-11-01T16:45:06.293Z",
+      "orders": []
     },
     {
       "id": "tenant_1793560037069",
@@ -10010,7 +9893,8 @@
       "status": "نشط",
       "plan": "pro",
       "planName": "الاحترافية",
-      "createdAt": "2026-11-01T19:07:17.069Z"
+      "createdAt": "2026-11-01T19:07:17.069Z",
+      "orders": []
     }
   ],
   "tenantData": {

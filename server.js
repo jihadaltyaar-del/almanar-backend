@@ -58,15 +58,15 @@ const canTransition = (cur, next) => (ORDER_FLOW[cur] || []).includes(next);
 // نطاق أوسع للمسار القديم (PUT) الخاص بالإدارة والأنظمة الحالية حتى لا تتعطل وظائفها
 // (العمليات الجديدة من تطبيق المندوب تمر عبر النقطة المحمية /api/driver/order-action الصارمة)
 const LEGACY_PUT_FLOW = {
-  pending: ['awaiting_receipt', 'accepted', 'delivering', 'on_the_way', 'completed', 'cancelled'],
-  awaiting_receipt: ['accepted', 'delivering', 'on_the_way', 'completed', 'cancelled'],
-  accepted: ['preparing', 'ready_for_delivery', 'delivering', 'on_the_way', 'completed', 'cancelled'],
-  preparing: ['ready_for_delivery', 'delivering', 'on_the_way', 'completed', 'cancelled'],
-  ready_for_delivery: ['delivering', 'on_the_way', 'completed', 'cancelled'],
-  on_the_way: ['delivered', 'completed', 'cancelled'],
-  delivering: ['delivered', 'completed', 'cancelled'],
-  delivered: ['completed', 'cancelled'],
-  completed: ['cancelled'],
+  pending: ['awaiting_receipt', 'accepted', 'delivering', 'on_the_way', 'delivered', 'completed', 'cancelled'],
+  awaiting_receipt: ['accepted', 'delivering', 'on_the_way', 'delivered', 'completed', 'cancelled'],
+  accepted: ['preparing', 'ready_for_delivery', 'delivering', 'on_the_way', 'delivered', 'completed', 'cancelled'],
+  preparing: ['ready_for_delivery', 'delivering', 'on_the_way', 'delivered', 'completed', 'cancelled'],
+  ready_for_delivery: ['delivering', 'on_the_way', 'delivered', 'completed', 'cancelled'],
+  on_the_way: ['delivered', 'completed', 'cancelled', 'delivering'],
+  delivering: ['delivered', 'completed', 'cancelled', 'on_the_way'],
+  delivered: ['completed', 'cancelled', 'delivered'],
+  completed: ['cancelled', 'completed'],
   cancelled: [],
 };
 
