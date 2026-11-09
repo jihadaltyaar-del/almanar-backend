@@ -1417,6 +1417,9 @@ const server = http.createServer(async (req, res) => {
                 if (drv) {
                   drv.activeOrders = Math.max(0, parseInt(drv.activeOrders || 0, 10) - 1);
                   drv.completedOrders = parseInt(drv.completedOrders || 0, 10) + 1;
+                  const fee = parseFloat(td.orders[idx].deliveryFee || 5) || 5;
+                  drv.walletBalance = Math.round(((parseFloat(drv.walletBalance || 0)) + fee) * 100) / 100;
+                  drv.earnings = Math.round(((parseFloat(drv.earnings || 0)) + fee) * 100) / 100;
                 }
               }
             }
@@ -1592,9 +1595,10 @@ const server = http.createServer(async (req, res) => {
 
         // ── باقي العمليات: تتطلب ملكية الطلب (المندوب المسند فقط) ──
         if (!order.claimedByDriverId) {
-          return reject(403, 'الطلب غير محجوز — يجب قبول الطلب أولاً');
-        }
-        if (!sameDriver) {
+          order.claimedByDriverId = driverId;
+          order.claimedByName = driverRecord.name;
+          order.driverName = driverRecord.name;
+        } else if (!sameDriver) {
           return reject(403, 'ممنوع تعديل هذا الطلب — إنه مسند إلى مندوب آخر');
         }
 
@@ -1650,6 +1654,9 @@ const server = http.createServer(async (req, res) => {
           order.completedAt = nowIso();
           driverRecord.activeOrders = Math.max(0, parseInt(driverRecord.activeOrders || 0, 10) - 1);
           driverRecord.completedOrders = parseInt(driverRecord.completedOrders || 0, 10) + 1;
+          const fee = parseFloat(order.deliveryFee || 5) || 5;
+          driverRecord.walletBalance = Math.round(((parseFloat(driverRecord.walletBalance || 0)) + fee) * 100) / 100;
+          driverRecord.earnings = Math.round(((parseFloat(driverRecord.earnings || 0)) + fee) * 100) / 100;
           // التوثيق الكامل: سجل «تم التسليم» قبل «مكتمل»
           if (order.statusHistory.length === 0 || order.statusHistory[order.statusHistory.length - 1].status !== 'delivered') {
             order.statusHistory.push({ status: 'delivered', at: nowIso(), by: 'driver', driverId, name: driverRecord.name });
