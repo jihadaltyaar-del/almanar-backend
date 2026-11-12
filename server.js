@@ -1228,10 +1228,10 @@ const server = http.createServer(async (req, res) => {
             id: body.id ? String(body.id).trim() : ('#' + Math.floor(10000000 + Math.random() * 90000000)),
             customerName: String(body.customerName || 'عميل التطبيق').trim(),
             phone: String(body.phone || '055xxxxxxx').trim(),
-            address: String(body.address || 'الرياض - حي الروضة').trim(),
-            branch: String(body.branch || 'سلة المنار - فرع الروضة').trim(),
+            address: String(body.address || 'بيشة - الموقع المحدد على الخريطة').trim(),
+            branch: String(body.branch || 'سلة المنار - بيشة').trim(),
             // مدينة التوصيل: يختارها العميل عند إتمام الطلب — هي أساس توجيه الطلبات للمندوبين
-            city: String(body.city || '').trim(),
+            city: String(body.city || 'بيشة').trim(),
             date: String(body.date || new Date().toISOString().replace('T', ' ').slice(0, 16)),
             itemsTotal: parseFloat(itemsTotal.toFixed(2)),
             deliveryFee: parseFloat(deliveryFee.toFixed(2)),
